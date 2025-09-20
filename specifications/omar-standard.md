@@ -1,7 +1,6 @@
 # On-Chain Metaverse Asset Registry (OMAR) Standard - Modular Architecture
 
 |     |     |
-| --- | --- |
 | **Status** | Draft |
 | **Type** | Standards Track |
 | **Category** | Application |
@@ -40,34 +39,11 @@ The metaverse requires interoperability across a multi-chain landscape. This sta
 
 **Core Registry Interface (IOMARegistry.sol)**
 
+The Core Registry interface defines all functions available for collection and asset management:
+
 ```solidity
 interface IOMARegistry {
-    struct AssetInfo {
-        string baseURI;        // Base URI for this asset type
-        string accessControl;  // JSON string defining access control for this asset type
-    }
-    
-    struct CollectionRecord {
-        bytes ownerIdentifier; // Verified owner (can be non-EVM)
-        address delegate;      // EVM address for managing updates
-        mapping(string => AssetInfo) assets; // Asset type to AssetInfo mapping
-        address verifier;
-        uint64 registrationTimestamp;
-        bool isEnabled;
-    }
-
-    event CollectionRegistered(uint256 indexed chainId, bytes contractIdentifier, bytes ownerIdentifier, address delegate);
-    event AssetUpdated(uint256 indexed chainId, bytes contractIdentifier, string assetType, string baseURI, address indexed delegate);
-    event DelegateTransferred(uint256 indexed chainId, bytes contractIdentifier, address indexed oldDelegate, address indexed newDelegate);
-
-    /**
-     * @notice Called by a Verifier to register a collection and set the initial delegate.
-     * @param ownerIdentifier The verified owner identifier (e.g., a non-EVM address).
-     * @param delegate The EVM address that will manage this record.
-     * @param assetTypes Array of asset types to register
-     * @param baseURIs Array of base URIs for each asset type
-     * @param accessControls Array of access control JSON strings for each asset type
-     */
+    // Collection Registration
     function setCollectionRecord(
         uint256 chainId,
         bytes calldata contractIdentifier,
@@ -77,10 +53,8 @@ interface IOMARegistry {
         string[] calldata baseURIs,
         string[] calldata accessControls
     ) external;
-
-    /**
-     * @notice Called by the current delegate to update an asset type's base URI and access control.
-     */
+    
+    // Asset Management
     function updateAsset(
         uint256 chainId,
         bytes calldata contractIdentifier,
@@ -88,66 +62,111 @@ interface IOMARegistry {
         string calldata baseURI,
         string calldata accessControl
     ) external;
-
-    /**
-     * @notice Called by the current delegate to transfer delegation to a new address.
-     */
+    
     function transferDelegate(
         uint256 chainId,
         bytes calldata contractIdentifier,
         address newDelegate
     ) external;
-
-    /**
-     * @notice Get the direct URL for a specific token and asset type.
-     * @param chainId The chain ID of the NFT collection
-     * @param contractIdentifier The contract identifier
-     * @param tokenId The token ID
-     * @param assetType The asset type (e.g., "gltf", "vrm", "mml")
-     * @return baseURI The base URI for the asset type
-     * @return accessControl The access control JSON for the asset type
-     */
+    
+    // Asset Queries
     function getTokenAsset(
         uint256 chainId,
         bytes calldata contractIdentifier,
         uint256 tokenId,
         string calldata assetType
     ) external view returns (string memory baseURI, string memory accessControl);
-
-    /**
-     * @notice Get all base URIs for a collection.
-     * @param chainId The chain ID of the NFT collection
-     * @param contractIdentifier The contract identifier
-     * @return assetTypes Array of asset types
-     * @return baseURIs Array of base URIs
-     * @return accessControls Array of access control JSON strings
-     */
+    
     function getCollectionAssets(
         uint256 chainId,
         bytes calldata contractIdentifier
     ) external view returns (string[] memory assetTypes, string[] memory baseURIs, string[] memory accessControls);
-
-    /**
-     * @notice Get base URI for a specific asset type.
-     * @param chainId The chain ID of the NFT collection
-     * @param contractIdentifier The contract identifier
-     * @param assetType The asset type
-     * @return baseURI The base URI for the asset type
-     * @return accessControl The access control JSON for the asset type
-     */
+    
     function getAssetType(
         uint256 chainId,
         bytes calldata contractIdentifier,
         string calldata assetType
     ) external view returns (string memory baseURI, string memory accessControl);
-
-    // Governance and view functions remain, adapted for `bytes` identifier.
+    
+    // Asset Type Management
+    function allowAssetType(string calldata assetType) external;
+    function disallowAssetType(string calldata assetType) external;
+    function isAssetTypeAllowed(string calldata assetType) external view returns (bool);
+    function getAllowedAssetTypeCount() external view returns (uint256);
+    function getAllowedAssetTypeByIndex(uint256 index) external view returns (string memory);
+    function getAllAllowedAssetTypes() external view returns (string[] memory);
+    
+    // Collection Enumeration
+    function getCollectionCount() external view returns (uint256);
+    function getCollectionByIndex(uint256 index) external view returns (uint256 chainId, bytes memory contractIdentifier);
+    function collectionExists(uint256 chainId, bytes calldata contractIdentifier) external view returns (bool);
+    function getCollectionDelegate(uint256 chainId, bytes calldata contractIdentifier) external view returns (address);
+    function getCollectionOwner(uint256 chainId, bytes calldata contractIdentifier) external view returns (bytes memory);
+    
+    // Asset Type Queries
+    function assetTypeExists(uint256 chainId, bytes calldata contractIdentifier, string calldata assetType) external view returns (bool);
+    function getAssetTypeCount(uint256 chainId, bytes calldata contractIdentifier) external view returns (uint256);
+    
+    // Verifier Management
+    function addVerifier(address verifier) external;
+    function removeVerifier(address verifier) external;
+    function isWhitelistedVerifier(address verifier) external view returns (bool);
+    function getVerifierCount() external view returns (uint256);
+    function getVerifierByIndex(uint256 index) external view returns (address);
+    function getAllVerifiers() external view returns (address[] memory);
+    
+    // Registry Management
+    function owner() external view returns (address);
+    function transferOwnership(address newOwner) external;
 }
 ```
 
 **Verifier Contract Interface (IOMAVerifier.sol)**
+```solidity
+interface IOMAVerifier {
+    function registerCollection(
+        uint256 chainId,
+        bytes calldata contractIdentifier,
+        bytes calldata ownerIdentifier,
+        address delegate,
+        string[] calldata assetTypes,
+        string[] calldata baseURIs,
+        string[] calldata accessControls,
+        bytes calldata proof
+    ) external;
+    
+    function getVerificationMethod() external pure returns (string memory);
+    function getVersion() external pure returns (string memory);
+}
+```
+
+### 3.3. Events
+
+The OMAR standard defines several events that are emitted by the Core Registry and Verifier contracts:
+
+**Collection Events:**
+- `CollectionRegistered(uint256 indexed chainId, bytes contractIdentifier, bytes ownerIdentifier, address delegate, address indexed verifier)` - Emitted when a collection is registered
+- `AssetUpdated(uint256 indexed chainId, bytes contractIdentifier, string assetType, string baseURI, address indexed delegate)` - Emitted when an asset type is updated
+- `DelegateTransferred(uint256 indexed chainId, bytes contractIdentifier, address indexed oldDelegate, address indexed newDelegate)` - Emitted when delegation is transferred
+
+**Verifier Management Events:**
+- `VerifierAdded(address indexed verifier)` - Emitted when a verifier is added to the whitelist
+- `VerifierRemoved(address indexed verifier)` - Emitted when a verifier is removed from the whitelist
+
+**Asset Type Management Events:**
+- `AssetTypeAllowed(string indexed assetType)` - Emitted when an asset type is allowed
+- `AssetTypeDisallowed(string indexed assetType)` - Emitted when an asset type is disallowed
+
+**Registry Management Events:**
+- `OwnershipTransferred(address indexed previousOwner, address indexed newOwner)` - Emitted when registry ownership is transferred
+
+**Verifier Events:**
+- `VerificationSuccess(uint256 indexed chainId, bytes contractIdentifier, bytes ownerIdentifier, address delegate)` - Emitted when verification succeeds
+- `VerificationFailed(uint256 indexed chainId, bytes contractIdentifier, string reason)` - Emitted when verification fails
 
 The Verifier's role is to perform the initial, robust ownership check and then call setCollectionRecord with the verified owner and the creator-specified delegate.
+
+**Verifier Implementation Examples:** Sample verifiers are available at [https://github.com/mddotcodes/omar_standard/blob/master/specifications/verifier-examples.md](./verifier-examples.md)
 
 ### 3.3. On-Chain Asset Storage
 
@@ -167,9 +186,6 @@ Each collection record stores only the essential information for asset retrieval
 | ownerIdentifier | Bytes | Verified owner identifier (can be non-EVM) |
 | delegate | Address | EVM address for managing asset updates |
 | assets | Mapping | Asset type → AssetInfo mapping |
-| verifier | Address | The verifier contract that processed registration |
-| registrationTimestamp | Uint64 | When the collection was registered |
-| isEnabled | Bool | Whether the collection is active |
 
 #### 3.3.2. Asset Information Structure
 
@@ -209,21 +225,81 @@ The registry supports three main query patterns to retrieve asset information:
    - Query: `getAssetType(chainId, contractIdentifier, assetType)`
    - Returns: `baseURI` and `accessControl` for the specified asset type
 
-#### 3.3.5. Token-Level Metadata
 
-Token-specific metadata files should follow standard ERC-721 metadata format and be stored at the URI resolved from the `metadata` asset type's baseURI + tokenId. These files contain individual token attributes and traits.
+#### 3.3.5. Asset Type Management
 
-#### 3.3.6. Access Control
+The registry implements a comprehensive asset type management system that allows the registry owner to control which asset types can be registered by collections.
+
+**Asset Type Management Features:**
+- **Allowed Asset Types**: Registry owner can add/remove allowed asset types
+- **Asset Type Validation**: Only whitelisted asset types can be registered
+- **Asset Type Enumeration**: Query all allowed asset types and their count
+- **Asset Type Events**: Events emitted when asset types are allowed/disallowed
+
+**Asset Type Management Functions:**
+- `allowAssetType(string calldata assetType)` - Add new allowed asset type
+- `disallowAssetType(string calldata assetType)` - Remove allowed asset type
+- `isAssetTypeAllowed(string calldata assetType)` - Check if asset type is allowed
+- `getAllowedAssetTypeCount()` - Get total number of allowed asset types
+- `getAllowedAssetTypeByIndex(uint256 index)` - Get asset type by index
+- `getAllAllowedAssetTypes()` - Get all allowed asset types
+
+#### 3.3.6. Collection Enumeration
+
+The registry provides comprehensive collection enumeration capabilities for querying all registered collections.
+
+**Collection Enumeration Features:**
+- **Collection Counting**: Track total number of registered collections
+- **Collection Indexing**: Access collections by index for enumeration
+- **Collection Information**: Retrieve chain ID and contract identifier for each collection
+- **Collection Existence**: Check if a collection exists in the registry
+
+**Collection Enumeration Functions:**
+- `getCollectionCount()` - Get total number of registered collections
+- `getCollectionByIndex(uint256 index)` - Get collection by index
+- `collectionExists(uint256 chainId, bytes calldata contractIdentifier)` - Check if collection exists
+- `getCollectionDelegate(uint256 chainId, bytes calldata contractIdentifier)` - Get collection delegate
+- `getCollectionOwner(uint256 chainId, bytes calldata contractIdentifier)` - Get collection owner
+
+#### 3.3.7. Verifier Management
+
+The registry implements a whitelist system for verifier contracts that can register collections.
+
+**Verifier Management Features:**
+- **Verifier Whitelist**: Only whitelisted verifiers can register collections
+- **Verifier Enumeration**: Query all whitelisted verifiers
+- **Verifier Validation**: Check if an address is a whitelisted verifier
+- **Verifier Events**: Events emitted when verifiers are added/removed
+
+**Verifier Management Functions:**
+- `addVerifier(address verifier)` - Add verifier to whitelist
+- `removeVerifier(address verifier)` - Remove verifier from whitelist
+- `isWhitelistedVerifier(address verifier)` - Check if verifier is whitelisted
+- `getVerifierCount()` - Get total number of whitelisted verifiers
+- `getVerifierByIndex(uint256 index)` - Get verifier by index
+- `getAllVerifiers()` - Get all whitelisted verifiers
+
+#### 3.3.8. Asset Type Query Functions
+
+The registry provides additional query functions for asset type information within collections.
+
+**Asset Type Query Functions:**
+- `assetTypeExists(uint256 chainId, bytes calldata contractIdentifier, string calldata assetType)` - Check if asset type exists for collection
+- `getAssetTypeCount(uint256 chainId, bytes calldata contractIdentifier)` - Get number of asset types for collection
+
+#### 3.3.9. Access Control
 
 Access control is defined per asset type using JSON strings stored in the `accessControl` field of each `AssetInfo` struct. This allows for granular control over different asset types within the same collection. The access control JSON should follow the same specification as defined in previous versions, allowing for token-gating and other access control mechanisms.
+
+**Access control implementation examples:** Sample specification available at [https://github.com/mddotcodes/omar_standard/blob/master/specifications/access-control.md](https://github.com/mddotcodes/omar_standard/blob/master/specifications/access-control.md)
 
 ### 3.4. Asset File Storage
 
 While collection metadata and asset pointers are stored on-chain, the actual asset files should be stored using decentralized storage strategies:
 
 - **Asset Files (GLB, glTF, VRM, etc.):** For public assets, storage on a content-addressed network like **IPFS** is recommended. For token-gated assets, files may be hosted on private servers accessible via the accessControl verification endpoint.
-- **Token Metadata Files:** Individual token metadata JSON files should be stored using the same strategy as asset files for consistency and reliability.
 - **Base URIs:** Should point to content-addressed storage (like IPFS) to ensure immutability and prevent "link rot."
+- **Token Metadata:** The aim of this standard is to centralize asset management for collections. Token metadata is not replicated in the registry and should be accessed directly via the collection contract via standard methods.
 
 ## 4. Rationale
 
@@ -234,6 +310,9 @@ While collection metadata and asset pointers are stored on-chain, the actual ass
 - **Granular Access Control:** Per-asset-type access control allows creators to implement different access policies for different asset formats within the same collection.
 - **Scalability:** The on-chain mapping structure efficiently handles collections with multiple asset types while maintaining the proven baseURI + tokenId pattern for individual assets.
 - **Modularity and Governance:** The Verifier pattern provides security and extensibility, allowing the governing body to safely add new verification methods for future chains or identity systems without altering the core registry.
+- **Asset Type Management:** Centralized control over allowed asset types ensures standardization and prevents registration of unsupported formats, maintaining registry integrity and compatibility.
+- **Collection Enumeration:** Comprehensive enumeration capabilities enable discovery and indexing of all registered collections, supporting ecosystem-wide queries and analytics.
+- **Verifier Management:** Whitelist-based verifier system ensures only trusted verification methods can register collections, maintaining security while allowing extensibility.
 
 ## 5. Security Considerations
 
